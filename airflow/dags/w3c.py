@@ -12,9 +12,8 @@ import requests
 import json
 import mysql.connector
 import logging
-from mysql.connector import Error
 
-BaseDir="/opt/airflow/data"
+BaseDir="/home/airflow/gcs/data"
 RawFiles=BaseDir+"/Raw/"
 Staging=BaseDir+"/Staging/"
 StarSchema=BaseDir+"/StarSchema/"
@@ -200,60 +199,12 @@ def GetLocations():
                file.write(out)
         except:
             print ("error getting location")
-            
-            
-def load_data_to_mysql():
-    """Loads data from a file to a MySQL table."""
-    try:
-        # Establish a connection using the Airflow connection ID
-        conn = mysql.connector.connect(
-            host='34.90.89.141',
-            user='root',  # MySQL username
-            password='1A25304k!',  # MySQL password
-            database='bi-database'  # Database name
-        )
-        if conn.is_connected():
-            cursor = conn.cursor()
-            
-            # Example: Load data from the fact table file into MySQL
-            load_sql = """
-            LOAD DATA LOCAL INFILE '/opt/data/StarSchema/'
-            INTO TABLE your_table_name
-            FIELDS TERMINATED BY ',' 
-            ENCLOSED BY '"'
-            LINES TERMINATED BY '\n'
-            IGNORE 1 ROWS
-            (Date, Time, Browser, IP, ResponseTime);
-            """
-            cursor.execute(load_sql)
-            conn.commit()
-            print("Data loaded successfully.")
-        else:
-            print("Failed to connect to MySQL database.")
-    except Error as e:
-        print(f"Error: {e}")
-    finally:
-        if conn.is_connected():
-            cursor.close()
-            conn.close()
-            print("MySQL connection is closed.")
-
-# Ensure to replace 'your_table_name' with the actual name of the table in your MySQL database
-# that you're intending to load the data into. The table structure should match the data being loaded.
-
-
-
 
 dag = DAG(                                                     
    dag_id="Process_W3_Data",                          
    schedule_interval="@daily",                                     
    start_date=dt.datetime(2023, 2, 24), 
    catchup=False,
-)
-load_to_mysql_task = PythonOperator(
-    task_id='load_data_to_mysql',
-    python_callable=load_data_to_mysql,
-    dag=dag,
 )
 download_data = PythonOperator(
    task_id="RemoveHash",
@@ -310,16 +261,11 @@ uniq2 = BashOperator(
 copyfact = BashOperator(
     task_id="copyfact",
 #    bash_command=uniqDateCommand,
-     bash_command="cp /opt/data/Staging/OutFact1.txt /opt/data/StarSchema/OutFact1.txt",
+     bash_command="cp /home/airflow/gcs/data/Staging/OutFact1.txt /home/airflow/gcs/data/StarSchema/OutFact1.txt",
 
     dag=dag,
 )
  
- 
-
-
-
-
   
 # download_data >> BuildFact1 >>DimIp>>DateTable>>uniq>>uniq2>>BuildDimDate>>IPTable
 
@@ -331,4 +277,3 @@ uniq.set_upstream(task_or_task_list=[DimIp])
 BuildDimDate.set_upstream(task_or_task_list=[uniq2])
 IPTable.set_upstream(task_or_task_list=[uniq])
 copyfact.set_upstream(task_or_task_list=[IPTable,BuildDimDate])
-load_to_mysql_task.set_upstream(copyfact)

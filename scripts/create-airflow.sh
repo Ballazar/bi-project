@@ -4,7 +4,6 @@
 # Navigate to Home Directory
 cd airflow
 
-curl -LfO 'https://airflow.apache.org/docs/apache-airflow/2.9.0/docker-compose.yaml'
 # Prepare Airflow Installation
 mkdir -p ./logs ./plugins ./config 
 echo -e "AIRFLOW_UID=$(id -u)" > .env

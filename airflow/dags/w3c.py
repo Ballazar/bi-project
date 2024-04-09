@@ -14,7 +14,7 @@ import mysql.connector
 import logging
 from mysql.connector import Error
 
-BaseDir="/home/airflow/gcs/data"
+BaseDir="/opt/contact-angusgb/airflow/data"
 RawFiles=BaseDir+"/Raw/"
 Staging=BaseDir+"/Staging/"
 StarSchema=BaseDir+"/StarSchema/"

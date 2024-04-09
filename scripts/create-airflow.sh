@@ -1,17 +1,16 @@
 #!/bin/bash
 
+
 # Navigate to Home Directory
-cd ~
+cd airflow
 
-# Prepare Airflow Installation
-mkdir -p ~/airflow/logs ~/airflow/plugins ~/airflow/config 
-echo -e "AIRFLOW_UID=$(id -u)" > ~/airflow/.env
-
-# Navigate to Airflow Directory
-cd ~/airflow
-
-# Download Docker Compose YAML for Airflow
 curl -LfO 'https://airflow.apache.org/docs/apache-airflow/2.9.0/docker-compose.yaml'
+# Prepare Airflow Installation
+mkdir -p ./logs ./plugins ./config 
+echo -e "AIRFLOW_UID=$(id -u)" > .env
+
+AIRFLOW_UID=50000
+
 
 # Start Airflow
 sudo docker compose up airflow-init

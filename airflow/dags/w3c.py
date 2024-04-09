@@ -14,7 +14,7 @@ import mysql.connector
 import logging
 from mysql.connector import Error
 
-BaseDir="/opt/contact_angusgb/airflow/data"
+BaseDir="/opt/airflow/data"
 RawFiles=BaseDir+"/Raw/"
 Staging=BaseDir+"/Staging/"
 StarSchema=BaseDir+"/StarSchema/"
@@ -217,7 +217,7 @@ def load_data_to_mysql():
             
             # Example: Load data from the fact table file into MySQL
             load_sql = """
-            LOAD DATA LOCAL INFILE '/home/airflow/gcs/data/StarSchema/'
+            LOAD DATA LOCAL INFILE '/opt/data/StarSchema/'
             INTO TABLE your_table_name
             FIELDS TERMINATED BY ',' 
             ENCLOSED BY '"'
@@ -310,7 +310,7 @@ uniq2 = BashOperator(
 copyfact = BashOperator(
     task_id="copyfact",
 #    bash_command=uniqDateCommand,
-     bash_command="cp /home/airflow/gcs/data/Staging/OutFact1.txt /home/airflow/gcs/data/StarSchema/OutFact1.txt",
+     bash_command="cp /opt/data/Staging/OutFact1.txt /opt/data/StarSchema/OutFact1.txt",
 
     dag=dag,
 )

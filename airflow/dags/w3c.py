@@ -13,7 +13,7 @@ import json
 import mysql.connector
 import logging
 
-BaseDir="/home/airflow/gcs/data"
+BaseDir="/opt/airflow/data"
 RawFiles=BaseDir+"/Raw/"
 Staging=BaseDir+"/Staging/"
 StarSchema=BaseDir+"/StarSchema/"
@@ -261,7 +261,7 @@ uniq2 = BashOperator(
 copyfact = BashOperator(
     task_id="copyfact",
 #    bash_command=uniqDateCommand,
-     bash_command="cp /home/airflow/gcs/data/Staging/OutFact1.txt /home/airflow/gcs/data/StarSchema/OutFact1.txt",
+     bash_command="cp /opt/airflow/data/Staging/OutFact1.txt /opt/airflow/data/StarSchema/OutFact1.txt",
 
     dag=dag,
 )

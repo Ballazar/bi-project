@@ -2,7 +2,7 @@
 
 
 # Navigate to Home Directory
-cd ~/bi-project/airflow
+cd /bi-project/airflow
 
 # Prepare Airflow Installation
 mkdir -p ./logs ./plugins ./config 

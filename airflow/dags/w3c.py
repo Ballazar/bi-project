@@ -12,6 +12,11 @@ import requests
 import json
 import mysql.connector
 import logging
+import psycopg2
+from airflow.hooks.postgres_hook import PostgresHook
+import logging
+import csv
+import ipaddress
 
 BaseDir="/opt/airflow/data"
 RawFiles=BaseDir+"/Raw/"
@@ -93,44 +98,146 @@ def ListFiles():
        CleanHash(f)
        
 def BuildFactShort():
-    InFile = open(Staging+'Outputshort.txt','r')
-    OutFact1=open(Staging+'OutFact1.txt', 'a')
+    InFile = open(Staging + 'Outputshort.txt', 'r')
+    OutFact1 = open(Staging + 'OutFact1.txt', 'a')
 
-    Lines= InFile.readlines()
+    Lines = InFile.readlines()
     for line in Lines:
-        Split=line.split(" ")
-        Browser=Split[9].replace(",","")
-        Out=Split[0]+","+Split[1]+","+Browser+","+Split[8]+","+Split[13]
-
+        Split = line.split(" ")
+        Date = Split[0]
+        Time = Split[1]
+        URI_Stem = Split[4]
+        Client_IP = Split[8]
+        Browser = Split[9].replace(",","")
+        Error = Split[10]
+        Time_Taken = Split[-1].strip()  # Remove newline character
+        
+        # Construct the output string with selected columns
+        Out = f"{Date},{Time},{URI_Stem},{Client_IP},{Browser},{Error},{Time_Taken}\n"
         OutFact1.write(Out)
 
 def BuildFactLong():
-    InFile = open(Staging+'Outputlong.txt','r')
-    OutFact1=open(Staging+'OutFact1.txt', 'a')
+    InFile = open(Staging + 'Outputlong.txt', 'r')
+    OutFact1 = open(Staging + 'OutFact1.txt', 'a')
 
-    Lines= InFile.readlines()
+    Lines = InFile.readlines()
     for line in Lines:
-        Split=line.split(" ")
-        Browser=Split[9].replace(",","")
-        Out=Split[0]+","+Split[1]+","+Browser+","+Split[8]+","+Split[16]
+        Split = line.split(" ")
+        Date = Split[0]
+        Time = Split[1]
+        URI_Stem = Split[4]
+        Client_IP = Split[8]
+        Browser = Split[9].replace(",","")
+        Error = Split[12]
+        Time_Taken = Split[-1].strip()  # Remove newline character
+        
+        # Construct the output string with selected columns
+        Out = f"{Date},{Time},{URI_Stem},{Client_IP},{Browser},{Error},{Time_Taken}\n"
         OutFact1.write(Out)
 
 def Fact1():
     with open(Staging+'OutFact1.txt', 'w') as file:
-        file.write("Date,Time,Browser,IP,ResponseTime\n")
+        file.write("Date,Time,is_bot,ip,Browser,error,responsetime\n")
     BuildFactShort()
     BuildFactLong()
- 
-def getIPs():
-    InFile = open(Staging+'OutFact1.txt', 'r')
-    OutputFile=open(Staging+'DimIP.txt', 'w')
-    Lines= InFile.readlines()
+
+def robots():
+    InFile = open(Staging + 'OutFact1.txt', 'r')
+    UpdatedFile = open(Staging + 'UpdatedOutFact1.txt', 'w')
+
+    # Write the header to the updated file)
+
+    # Read each line from the input file and update the cs-uri-stem column
+    Lines = InFile.readlines()
     for line in Lines:
-        Split=line.split(",")
-        Out=Split[3]+"\n"
-        OutputFile.write(Out)
+        # Split the line into fields
+        fields = line.strip().split(',')
+
+        # Check if cs-uri-stem contains "robots.txt" and update cs-uri-stem accordingly
+        if "robots.txt" in fields[2]:
+            uri_stem_value = "True"
+        else:
+            uri_stem_value = "False"
+
+        # Update the cs-uri-stem column
+        fields[2] = uri_stem_value
+
+        # Construct the updated line
+        updated_line = ','.join(fields) + '\n'
+        UpdatedFile.write(updated_line)
+
+def extract_browser_name(browser_info):
+    # Iterate through each character in the browser_info string
+    browser_name = ''
+    for char in browser_info:
+        # Check if the character is a letter
+        if char.isalpha():
+            # Append the character to the browser name
+            browser_name += char
+        else:
+            # If a non-letter character is encountered, stop iterating
+            break
+    return browser_name
+
+
+def getbrowser():
+    # Open the input file for reading
+    with open(Staging + 'UpdatedOutFact1.txt', 'r') as infile:
+        # Initialize a dictionary to store browser names and IDs
+        browser_ids = {}
+        for line in infile:
+            # Split each line based on the comma character
+            parts = line.strip().split(',')
+            # Extract the browser name from the fifth column until the first non-letter character
+            browser_info = parts[4]
+            browser_name = extract_browser_name(browser_info)
+            # If the browser name is not already in the dictionary, assign it a new ID
+            if browser_name not in browser_ids:
+                browser_ids[browser_name] = len(browser_ids) + 1
+
+    # Write the browser IDs and names to the output file
+    with open(Staging + 'FinalFactTable.txt', 'w') as outfile:
+        for browser_name, browser_id in browser_ids.items():
+            outfile.write(f"{browser_id},{browser_name}\n")
+
+def getIPs():
+    # Create a dictionary to store the index for each unique IP address
+    ip_index = {}
+    index_counter = 1
+
+    # Open the input file containing data
+    with open(Staging+'FinalFactTable.txt', 'r') as infile:
+        # Read each line from the input file
+        for line in infile:
+            # Split the line by comma and get the IP address (assuming IP is the fourth field)
+            fields = line.strip().split(',')
+            if len(fields) >= 4:
+                ip_address = fields[3].strip()
+                
+                # If the IP address is not already in the index dictionary, assign it a new index
+                if ip_address not in ip_index:
+                    ip_index[ip_address] = index_counter
+                    index_counter += 1
+
+    # Write the IP indices and IP addresses to the output file
+    with open(StarSchema+'DimIPTable.txt', 'w') as outfile:
+        # Write header to the output file
+        outfile.write("IP_ID,IP\n")
+        
+        # Write unique IP addresses with their corresponding indices
+        for ip_address, ip_id in ip_index.items():
+            outfile.write(f"{ip_id},{ip_address}\n")
+        
+        # Write duplicate IP addresses with the same index as the first occurrence
+        with open(Staging+'OutFact1.txt', 'r') as infile:
+            for line in infile:
+                fields = line.strip().split(',')
+                if len(fields) >= 4:
+                    ip_address = fields[3].strip()
+                    if ip_address not in ip_index:
+                        outfile.write(f"{ip_index[ip_address]},{ip_address}\n")              
 def makeDimDate():
-    InFile = open(Staging+'OutFact1.txt', 'r')
+    InFile = open(Staging+'FinalFactTable.txt', 'r')
     OutputFile=open(Staging+'DimDate.txt', 'w')
 
     Lines= InFile.readlines()
@@ -200,6 +307,90 @@ def GetLocations():
         except:
             print ("error getting location")
 
+def insert_data_into_db():
+    pg_hook = PostgresHook(postgres_conn_id='postgres_default')
+    conn = pg_hook.get_conn()
+    cursor = conn.cursor()
+
+    file_path = '/opt/airflow/data/StarSchema/OutFact1.txt'
+    table_name = 'fact_table'  # Ensure this is the correct table name
+    schema = 'biproject'
+
+    try:
+        with open(file_path, 'r') as file:
+            reader = csv.reader(file)
+            headers = next(reader)  # skip the header
+            insert_query = f'INSERT INTO {schema}.{table_name} ("date", "time", "s_ip", "cs_method", "cs_uri_stem", "cs_uri_query", "s_port", "cs_username", "c_ip", "cs_user_agent", "sc_status", "sc_substatus", "sc_win32_status", "sc_bytes", "cs_bytes", "time_taken") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'            
+            for row in reader:
+                # Check if the row has the expected number of elements
+                if len(row) == len(headers):
+                    cursor.execute(insert_query, row)
+                else:
+                    logging.warning(f"Ignoring row: {row}. Number of columns doesn't match the expected number.")
+    except Exception as e:
+        logging.error(f"Error during data import: {e}")
+    finally:
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logging.info("Data inserted successfully.")
+
+def validate_and_clean_data():
+    input_file_path = '/opt/airflow/data/StarSchema/OutFact1.txt'
+    clean_file_path = '/opt/airflow/data/StarSchema/CleanOutFact1.txt'
+    invalid_data_path = '/opt/airflow/data/StarSchema/InvalidOutFact1.txt'
+
+    with open(input_file_path, 'r') as infile, \
+         open(clean_file_path, 'w') as outfile, \
+         open(invalid_data_path, 'w') as errfile:
+
+        headers = infile.readline()
+        outfile.write(headers)
+        errfile.write(headers)
+
+        for line in infile:
+            fields = line.strip().split(',')
+            if validate_row(fields):
+                outfile.write(line)
+            else:
+                errfile.write(line)
+
+def validate_row(fields):
+    expected_num_fields = 18
+    if len(fields) != expected_num_fields:
+        return False
+    try:
+        datetime.strptime(fields[0], "%Y-%m-%d")
+        datetime.strptime(fields[1], "%H:%M:%S")
+        # Further checks can be added here
+    except ValueError:
+        return False
+
+    return True
+
+def insert_ip_data():
+    pg_hook = PostgresHook(postgres_conn_id='postgres_default')
+    conn = pg_hook.get_conn()
+    cursor = conn.cursor()  
+
+    file_path = '/opt/airflow/data/StarSchema/DimIPTable.txt'
+    iptable_name = 'ip_data'  # Ensure this is the correct table name
+    schema = 'biproject'
+
+    try:
+        with open(file_path, 'r') as file:
+            reader = csv.reader(file)
+            headers = next(reader)  # skip the header
+            insert_query = f'INSERT INTO {schema}.{iptable_name} ("ip_id", "ip") VALUES (%s, %s)'
+            cursor.executemany(insert_query, reader)
+    except Exception as e:
+        logging.error(f"Error during data import: {e}")
+    finally:
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logging.info("Data inserted successfully.")
+
 dag = DAG(                                                     
    dag_id="Process_W3_Data",                          
    schedule_interval="@daily",                                     
@@ -217,6 +408,11 @@ DimIp = PythonOperator(
     python_callable=getIPs,
     dag=dag,
 )
+DimRobot = PythonOperator(
+        task_id="DimRobot",
+        python_callable=robots,
+        dag=dag,
+)
 
 DateTable = PythonOperator(
     task_id="DateTable",
@@ -233,6 +429,12 @@ IPTable = PythonOperator(
 BuildFact1 = PythonOperator(
    task_id="BuildFact1",
    python_callable= Fact1,
+   dag=dag,
+)
+
+buildbrowser = PythonOperator(
+   task_id="Buildbrowser",
+   python_callable=getbrowser,
    dag=dag,
 )
 
@@ -265,15 +467,38 @@ copyfact = BashOperator(
 
     dag=dag,
 )
+
+validate_clean_data_task = PythonOperator(
+    task_id='validate_and_clean_data',
+    python_callable=validate_and_clean_data,
+    dag=dag,
+)
+
+insert_data_task = PythonOperator(
+    task_id='insert_data_into_db',
+    python_callable=insert_data_into_db,
+    dag=dag,
+)
+
+insert_ip_data_task = PythonOperator(
+    task_id='insert_ip_into_db',
+    python_callable=insert_ip_data,
+    dag=dag,
+)
  
-  
+
 # download_data >> BuildFact1 >>DimIp>>DateTable>>uniq>>uniq2>>BuildDimDate>>IPTable
 
 BuildFact1.set_upstream(task_or_task_list=[download_data])
 DimIp.set_upstream(task_or_task_list=[BuildFact1])
+DimRobot.set_upstream(task_or_task_list=[BuildFact1])
+buildbrowser.set_upstream(task_or_task_list=[BuildFact1])
 DateTable.set_upstream(task_or_task_list=[BuildFact1])
 uniq2.set_upstream(task_or_task_list=[DateTable])
 uniq.set_upstream(task_or_task_list=[DimIp])
 BuildDimDate.set_upstream(task_or_task_list=[uniq2])
 IPTable.set_upstream(task_or_task_list=[uniq])
 copyfact.set_upstream(task_or_task_list=[IPTable,BuildDimDate])
+validate_clean_data_task.set_upstream(task_or_task_list=[copyfact])
+insert_data_task.set_upstream(task_or_task_list=[validate_clean_data_task])
+insert_ip_data_task.set_upstream(task_or_task_list=[DimIp])

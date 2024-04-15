@@ -196,7 +196,7 @@ def getbrowser():
                 browser_ids[browser_name] = len(browser_ids) + 1
 
     # Write the browser IDs and names to the output file
-    with open(Staging + 'FinalFactTable.txt', 'w') as outfile:
+    with open(Staging + 'Browsers.txt', 'w') as outfile:
         for browser_name, browser_id in browser_ids.items():
             outfile.write(f"{browser_id},{browser_name}\n")
 
@@ -206,7 +206,7 @@ def getIPs():
     index_counter = 1
 
     # Open the input file containing data
-    with open(Staging+'FinalFactTable.txt', 'r') as infile:
+    with open(Staging+'UpdatedOutFact1.txt', 'r') as infile:
         # Read each line from the input file
         for line in infile:
             # Split the line by comma and get the IP address (assuming IP is the fourth field)
@@ -220,7 +220,7 @@ def getIPs():
                     index_counter += 1
 
     # Write the IP indices and IP addresses to the output file
-    with open(StarSchema+'DimIPTable.txt', 'w') as outfile:
+    with open(StarSchema+'DimIP.txt', 'w') as outfile:
         # Write header to the output file
         outfile.write("IP_ID,IP\n")
         
@@ -237,7 +237,7 @@ def getIPs():
                     if ip_address not in ip_index:
                         outfile.write(f"{ip_index[ip_address]},{ip_address}\n")              
 def makeDimDate():
-    InFile = open(Staging+'FinalFactTable.txt', 'r')
+    InFile = open(Staging+'UpdatedFactTable.txt', 'r')
     OutputFile=open(Staging+'DimDate.txt', 'w')
 
     Lines= InFile.readlines()
@@ -490,9 +490,9 @@ insert_ip_data_task = PythonOperator(
 # download_data >> BuildFact1 >>DimIp>>DateTable>>uniq>>uniq2>>BuildDimDate>>IPTable
 
 BuildFact1.set_upstream(task_or_task_list=[download_data])
-DimIp.set_upstream(task_or_task_list=[BuildFact1])
 DimRobot.set_upstream(task_or_task_list=[BuildFact1])
 buildbrowser.set_upstream(task_or_task_list=[BuildFact1])
+DimIp.set_upstream(task_or_task_list=[BuildFact1])
 DateTable.set_upstream(task_or_task_list=[BuildFact1])
 uniq2.set_upstream(task_or_task_list=[DateTable])
 uniq.set_upstream(task_or_task_list=[DimIp])

@@ -25,8 +25,14 @@ StarSchema=BaseDir+"/StarSchema/"
 # DimIP = open(Staging+'DimIP.txt', 'r')
 # DimUnicIP=open(Staging+'DimIPUniq.txt', 'w')
 # uniqCommand="sort "+Staging+"DimIP.txt | uniq > "+Staging+'DimIPUniq.txt'
-
-uniqCommand="sort -u "+Staging+"DimIP.txt > "+Staging+'DimIPUniq.txt'
+pg_connection_params = {
+    "host": "34.171.184.69",
+    "port": "5432",
+    "database": "airflow",
+    "user": "airflow",
+    "password": "airflow"
+}
+uniqCommand="sort -u "+Staging+"DimIP.txt > "+StarSchema+'DimIPTable.txt'
 uniqDateCommand="sort -u "+Staging+"DimDate.txt > "+Staging+'DimDateUniq.txt'
 
 # uniqCommand="sort -u -o "+Staging+"DimIPUniq.txt " +Staging+"DimIP.txt"
@@ -220,7 +226,7 @@ def getIPs():
                     index_counter += 1
 
     # Write the IP indices and IP addresses to the output file
-    with open(StarSchema+'DimIP.txt', 'w') as outfile:
+    with open(Staging+'DimIP.txt', 'w') as outfile:
         # Write header to the output file
         outfile.write("IP_ID,IP\n")
         
@@ -229,15 +235,17 @@ def getIPs():
             outfile.write(f"{ip_id},{ip_address}\n")
         
         # Write duplicate IP addresses with the same index as the first occurrence
-        with open(Staging+'OutFact1.txt', 'r') as infile:
+        with open(Staging+'UpdatedOutFact1.txt', 'r') as infile:
             for line in infile:
                 fields = line.strip().split(',')
                 if len(fields) >= 4:
                     ip_address = fields[3].strip()
-                    if ip_address not in ip_index:
-                        outfile.write(f"{ip_index[ip_address]},{ip_address}\n")              
+                    if ip_address in ip_index:
+                        outfile.write(f"{ip_index[ip_address]},{ip_address}\n")
+
+            
 def makeDimDate():
-    InFile = open(Staging+'UpdatedFactTable.txt', 'r')
+    InFile = open(Staging+'UpdatedOutFact1.txt', 'r')
     OutputFile=open(Staging+'DimDate.txt', 'w')
 
     Lines= InFile.readlines()
@@ -279,7 +287,7 @@ def GetLocations():
            return
     except:
         print("Dim Table IP does not exist, creating one")
-    InFile=open(Staging+'DimIPUniq.txt', 'r')
+    InFile=open(StarSchema+'DimIPTable.txt', 'r')
     OutFile=open(StarSchema+'DimIPLoc.txt', 'w')
     
     
@@ -486,14 +494,12 @@ insert_ip_data_task = PythonOperator(
     dag=dag,
 )
  
-
 # download_data >> BuildFact1 >>DimIp>>DateTable>>uniq>>uniq2>>BuildDimDate>>IPTable
-
 BuildFact1.set_upstream(task_or_task_list=[download_data])
 DimRobot.set_upstream(task_or_task_list=[BuildFact1])
-buildbrowser.set_upstream(task_or_task_list=[BuildFact1])
-DimIp.set_upstream(task_or_task_list=[BuildFact1])
-DateTable.set_upstream(task_or_task_list=[BuildFact1])
+DimIp.set_upstream(task_or_task_list=[DimRobot])
+buildbrowser.set_upstream(task_or_task_list=[DimRobot])
+DateTable.set_upstream(task_or_task_list=[DimRobot])
 uniq2.set_upstream(task_or_task_list=[DateTable])
 uniq.set_upstream(task_or_task_list=[DimIp])
 BuildDimDate.set_upstream(task_or_task_list=[uniq2])

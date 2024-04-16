@@ -17,6 +17,9 @@ from airflow.hooks.postgres_hook import PostgresHook
 import logging
 import csv
 import ipaddress
+import subprocess
+subprocess.call(['pip', 'install', 'user-agents'])
+from user_agents import parse
 
 BaseDir="/opt/airflow/data"
 RawFiles=BaseDir+"/Raw/"
@@ -32,7 +35,7 @@ pg_connection_params = {
     "user": "airflow",
     "password": "airflow"
 }
-uniqCommand="sort -u "+Staging+"DimIP.txt > "+StarSchema+'DimIPTable.txt'
+uniqCommand="sort -r "+Staging+"DimIP.txt | uniq > "+StarSchema+'DimIPTable.txt'
 uniqDateCommand="sort -u "+Staging+"DimDate.txt > "+Staging+'DimDateUniq.txt'
 
 # uniqCommand="sort -u -o "+Staging+"DimIPUniq.txt " +Staging+"DimIP.txt"
@@ -148,63 +151,78 @@ def Fact1():
     BuildFactLong()
 
 def robots():
+    # Dictionary to track is_robot status for each IP address
+    ip_status = {}
+    
     InFile = open(Staging + 'OutFact1.txt', 'r')
     UpdatedFile = open(Staging + 'UpdatedOutFact1.txt', 'w')
 
-    # Write the header to the updated file)
+    # Read the first line (header) and write it to the updated file
+    header = InFile.readline().strip()
+    UpdatedFile.write(header + '\n')
 
     # Read each line from the input file and update the cs-uri-stem column
-    Lines = InFile.readlines()
-    for line in Lines:
+    for line in InFile:
         # Split the line into fields
         fields = line.strip().split(',')
 
-        # Check if cs-uri-stem contains "robots.txt" and update cs-uri-stem accordingly
-        if "robots.txt" in fields[2]:
-            uri_stem_value = "True"
-        else:
-            uri_stem_value = "False"
+        # Extract IP address and browser info
+        ip_address = fields[3]
+        browser_info = fields[2]
 
-        # Update the cs-uri-stem column
-        fields[2] = uri_stem_value
+        # Check if the IP address is in the dictionary
+        if ip_address in ip_status:
+            # If already marked as a bot, update the value accordingly
+            is_bot = ip_status[ip_address]
+        else:
+            # Determine if the browser info indicates a bot
+            is_bot = "True" if "robots.txt" in browser_info else "False"
+            # Update the dictionary with the status for this IP address
+            ip_status[ip_address] = is_bot
+        
+        # Update the is_robot column
+        fields[2] = is_bot
 
         # Construct the updated line
         updated_line = ','.join(fields) + '\n'
         UpdatedFile.write(updated_line)
 
-def extract_browser_name(browser_info):
-    # Iterate through each character in the browser_info string
-    browser_name = ''
-    for char in browser_info:
-        # Check if the character is a letter
-        if char.isalpha():
-            # Append the character to the browser name
-            browser_name += char
-        else:
-            # If a non-letter character is encountered, stop iterating
-            break
-    return browser_name
 
+def get_browser_and_os(user_agent_string):
+    # Parse the User-Agent string
+    user_agent = parse(user_agent_string)
+    
+    # Extract browser name and operating system
+    browser_name = user_agent.browser.family
+    os_name = user_agent.os.family
+    
+    return browser_name, os_name
 
 def getbrowser():
+    # Initialize a dictionary to store browser names and IDs
+    browser_info = {}
+
     # Open the input file for reading
     with open(Staging + 'UpdatedOutFact1.txt', 'r') as infile:
-        # Initialize a dictionary to store browser names and IDs
-        browser_ids = {}
         for line in infile:
             # Split each line based on the comma character
             parts = line.strip().split(',')
-            # Extract the browser name from the fifth column until the first non-letter character
-            browser_info = parts[4]
-            browser_name = extract_browser_name(browser_info)
-            # If the browser name is not already in the dictionary, assign it a new ID
-            if browser_name not in browser_ids:
-                browser_ids[browser_name] = len(browser_ids) + 1
+            
+            # Get the User-Agent string from the fifth column
+            user_agent_string = parts[4].strip()
+            
+            # Extract browser name and operating system
+            browser_name, os_name = get_browser_and_os(user_agent_string)
+            
+            # If the browser info is not already in the dictionary, assign it a new ID
+            if (browser_name, os_name) not in browser_info:
+                browser_info[(browser_name, os_name)] = len(browser_info) + 1
 
     # Write the browser IDs and names to the output file
     with open(Staging + 'Browsers.txt', 'w') as outfile:
-        for browser_name, browser_id in browser_ids.items():
-            outfile.write(f"{browser_id},{browser_name}\n")
+        for (browser_name, os_name), browser_id in browser_info.items():
+            outfile.write(f"{browser_id},{browser_name},{os_name}\n")
+
 
 def getIPs():
     # Create a dictionary to store the index for each unique IP address
@@ -220,10 +238,12 @@ def getIPs():
             if len(fields) >= 4:
                 ip_address = fields[3].strip()
                 
-                # If the IP address is not already in the index dictionary, assign it a new index
-                if ip_address not in ip_index:
-                    ip_index[ip_address] = index_counter
-                    index_counter += 1
+                # Check if the IP address contains only digits and dots
+                if ip_address.replace('.', '').isdigit():
+                    # If the IP address is not already in the index dictionary, assign it a new index
+                    if ip_address not in ip_index:
+                        ip_index[ip_address] = index_counter
+                        index_counter += 1
 
     # Write the IP indices and IP addresses to the output file
     with open(Staging+'DimIP.txt', 'w') as outfile:
@@ -494,7 +514,9 @@ insert_ip_data_task = PythonOperator(
     dag=dag,
 )
  
+
 # download_data >> BuildFact1 >>DimIp>>DateTable>>uniq>>uniq2>>BuildDimDate>>IPTable
+
 BuildFact1.set_upstream(task_or_task_list=[download_data])
 DimRobot.set_upstream(task_or_task_list=[BuildFact1])
 DimIp.set_upstream(task_or_task_list=[DimRobot])

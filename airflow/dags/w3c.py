@@ -18,7 +18,6 @@ import logging
 import csv
 import ipaddress
 import subprocess
-subprocess.call(['pip', 'install', 'user-agents'])
 from user_agents import parse
 
 BaseDir="/opt/airflow/data"
@@ -191,25 +190,120 @@ Days=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
 
  
 def getDates():
-    InDateFile = open(Staging+'DimDateUniq.txt', 'r')   
-    OutputDateFile=open(StarSchema+'DimDateTable.txt', 'w')
-    with OutputDateFile as file:
-       file.write("Date,Year,Month,Day,DayofWeek\n")
-    Lines= InDateFile.readlines()
+    with open(Staging + 'DimDateUniq.txt', 'r') as InDateFile, \
+         open(StarSchema + 'DimDateTable.txt', 'w') as OutputDateFile:
+        next(InDateFile)  # Skip the first line (header)
+        OutputDateFile.write("Date,Year,Month,Day,DayofWeek\n")
+
+        for line in InDateFile:
+            line = line.strip()  # Remove newline character
+            if line != "Date":  # Skip lines that contain "Date"
+                try:
+                    date = datetime.strptime(line, "%Y-%m-%d").date()
+                    weekday = Days[date.weekday()]
+                    out = f"{date},{date.year},{date.month},{date.day},{weekday}\n"
+                    OutputDateFile.write(out)
+                except ValueError:
+                    print("Error with Date")
+
+def GetLocations():
+    DimTablename=StarSchema+'DimIPLoc.txt'
+    try:
+        file_stats = os.stat(DimTablename)
     
+        if (file_stats.st_size >2):
+           print("Dim IP Table Exists")
+           return
+    except:
+        print("Dim Table IP does not exist, creating one")
+    InFile=open(Staging+'DimIPUniq.txt', 'r')
+    OutFile=open(StarSchema+'DimIPLoc.txt', 'w')
+    
+    
+    Lines= InFile.readlines()
     for line in Lines:
         line=line.replace("\n","")
-        print(line)
+        # URL to send the request to
+        request_url = 'https://geolocation-db.com/jsonp/' + line
+#         print (request_url)
+        # Send request and decode the result
         try:
-            date=datetime.strptime(line,"%Y-%m-%d").date()
-            weekday=Days[date.weekday()]
-            out=str(date)+","+str(date.year)+","+str(date.month)+","+str(date.day)+","+weekday+"\n"
-            
-            with open(StarSchema+'DimDateTable.txt', 'a') as file:
+            response = requests.get(request_url)
+            result = response.content.decode()
+        except:
+           print("error response: " + str(result))
+        try:
+        # Clean the returned string so it just contains the dictionary data for the IP address
+            result = result.split("(")[1].strip(")")
+        # Convert this data into a dictionary
+            result  = json.loads(result)
+            out=line+","+str(result["country_code"])+","+str(result["country_name"])+","+str(result["city"])+","+str(result["latitude"])+","+str(result["longitude"])+"\n"
+#            print(out)
+            with open(StarSchema+'DimIPLoc.txt', 'a') as file:
                file.write(out)
         except:
-            print("Error with Date")
-            
+            print ("error getting location")
+
+def generate_id_tables():
+    input_file = 'FinalOutFact1.txt'
+    
+    # Read input file and extract unique values for each column
+    error_types = set()
+    browsers = set()
+    operating_systems = set()
+    
+    with open(Staging + input_file, 'r') as infile:
+        next(infile)  # Skip header
+        for line in infile:
+            columns = line.strip().split(',')
+            if len(columns) >= 6:  # Ensure that the line has at least 6 columns
+                error_types.add(columns[3])  # Fourth column is error type
+                browsers.add(columns[5])     # Fifth column is browser
+                operating_systems.add(columns[6])  # Sixth column is operating system    with open(StarChema + output_file, 'w') as outfile:
+        # Write unique values to separate id tables
+    write_id_table('Errorid.txt', error_types)
+    write_id_table('Browserid.txt', browsers)
+    write_id_table('Osid.txt', operating_systems)
+    
+
+def write_id_table(output_file, values):
+    with open(StarSchema + output_file, 'w') as outfile:
+        for idx, value in enumerate(values, start=1):
+            outfile.write(f"{idx},{value}\n")
+
+def map_id_values():
+    input_file = 'FinalOutFact1.txt'
+    error_id_file = 'Errorid.txt'
+    browser_id_file = 'Browserid.txt'
+    os_id_file = 'Osid.txt'
+    output_file = 'MappedFinalOutFact1.txt'
+
+    # Read the ID tables into dictionaries
+    error_id_dict = read_id_table(error_id_file)
+    browser_id_dict = read_id_table(browser_id_file)
+    os_id_dict = read_id_table(os_id_file)
+
+    # Map ID values onto the original values in the input table and write to output file
+    with open(Staging + input_file, 'r') as infile, open(StarSchema + output_file, 'w') as outfile:
+        header = next(infile)  # Read header
+        outfile.write(header)  # Write header to output file
+        for line in infile:
+            columns = line.strip().split(',')
+            if len(columns) >= 6:
+                error_type_id = error_id_dict.get(columns[3], '')
+                browser_id = browser_id_dict.get(columns[5], '')
+                os_id = os_id_dict.get(columns[6], '')
+                mapped_line = ','.join([columns[0], columns[1], columns[2], error_type_id,  browser_id, os_id, columns[7]])
+                outfile.write(mapped_line + '\n')
+
+def read_id_table(input_file):
+    id_dict = {}
+    with open(StarSchema + input_file, 'r') as infile:
+        for line in infile:
+            idx, value = line.strip().split(',')
+            id_dict[value] = idx
+    return id_dict
+
 
 dag = DAG(                                                     
    dag_id="Process_W3_Data",                          
@@ -272,6 +366,11 @@ copyfact = BashOperator(
     dag=dag,
 )
 
+IPTable = PythonOperator(
+    task_id="IPTable",
+    python_callable=GetLocations,
+    dag=dag,
+)
 
 browser = PythonOperator(
         task_id="browser",
@@ -279,6 +378,18 @@ browser = PythonOperator(
         dag=dag,
 )
   
+idtables = PythonOperator(
+        task_id="idtables",
+        python_callable=generate_id_tables,
+        dag=dag,
+)
+
+# Define the task to execute the map_id_values function
+map_id_values_task = PythonOperator(
+    task_id='map_id_values_task',
+    python_callable=map_id_values,
+    dag=dag,
+)
 # download_data >> BuildFact1 >>DimIp>>DateTable>>uniq>>uniq2>>BuildDimDate>>IPTable
 
 BuildFact1.set_upstream(task_or_task_list=[download_data])
@@ -288,4 +399,7 @@ browser.set_upstream(task_or_task_list=[BuildFact1])
 uniq2.set_upstream(task_or_task_list=[DateTable])
 uniq.set_upstream(task_or_task_list=[DimIp])
 BuildDimDate.set_upstream(task_or_task_list=[uniq2])
-copyfact.set_upstream(task_or_task_list=[BuildDimDate])
+IPTable.set_upstream(task_or_task_list=[uniq])
+idtables.set_upstream(task_or_task_list=[browser])
+map_id_values_task.set_upstream(task_or_task_list=[idtables])
+copyfact.set_upstream(task_or_task_list=[IPTable,BuildDimDate])

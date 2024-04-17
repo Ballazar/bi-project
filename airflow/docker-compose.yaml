@@ -194,8 +194,9 @@ services:
       - -c
       - |
         apt update && apt install -y python3-user-agents python3-pip 
-        pip3 install ip2location
-        if [[ -z "${AIRFLOW_UID}" ]]; then
+        pip3 install ip2location ipinfo
+        apt-get install -y geoip-bin
+        if [[ -z "${AIRFLOW_UID}" ]];  then
           echo
           echo -e "\033[1;33mWARNING!!!: AIRFLOW_UID not set!\e[0m"
           echo "If you are on Linux, you SHOULD follow the instructions below to set "

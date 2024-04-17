@@ -211,43 +211,6 @@ def getDates():
         except:
             print("Error with Date")
             
-def GetLocations():
-    DimTablename=StarSchema+'DimIPLoc.txt'
-    try:
-        file_stats = os.stat(DimTablename)
-    
-        if (file_stats.st_size >2):
-           print("Dim IP Table Exists")
-           return
-    except:
-        print("Dim Table IP does not exist, creating one")
-    InFile=open(Staging+'DimIPUniq.txt', 'r')
-    OutFile=open(StarSchema+'DimIPLoc.txt', 'w')
-    
-    
-    Lines= InFile.readlines()
-    for line in Lines:
-        line=line.replace("\n","")
-        # URL to send the request to
-        request_url = 'https://geolocation-db.com/jsonp/' + line
-#         print (request_url)
-        # Send request and decode the result
-        try:
-            response = requests.get(request_url)
-            result = response.content.decode()
-        except:
-            print ("error reponse"+result)
-        try:
-        # Clean the returned string so it just contains the dictionary data for the IP address
-            result = result.split("(")[1].strip(")")
-        # Convert this data into a dictionary
-            result  = json.loads(result)
-            out=line+","+str(result["country_code"])+","+str(result["country_name"])+","+str(result["city"])+","+str(result["latitude"])+","+str(result["longitude"])+"\n"
-#            print(out)
-            with open(StarSchema+'DimIPLoc.txt', 'a') as file:
-               file.write(out)
-        except:
-            print ("error getting location")
 
 dag = DAG(                                                     
    dag_id="Process_W3_Data",                          
@@ -273,11 +236,6 @@ DateTable = PythonOperator(
     dag=dag,
 )
 
-IPTable = PythonOperator(
-    task_id="IPTable",
-    python_callable=GetLocations,
-    dag=dag,
-)
 
 BuildFact1 = PythonOperator(
    task_id="BuildFact1",
@@ -331,5 +289,4 @@ browser.set_upstream(task_or_task_list=[BuildFact1])
 uniq2.set_upstream(task_or_task_list=[DateTable])
 uniq.set_upstream(task_or_task_list=[DimIp])
 BuildDimDate.set_upstream(task_or_task_list=[uniq2])
-IPTable.set_upstream(task_or_task_list=[uniq])
-copyfact.set_upstream(task_or_task_list=[IPTable,BuildDimDate])
+copyfact.set_upstream(task_or_task_list=[BuildDimDate])

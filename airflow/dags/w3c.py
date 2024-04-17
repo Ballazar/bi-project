@@ -17,9 +17,8 @@ from airflow.hooks.postgres_hook import PostgresHook
 import logging
 import csv
 import ipaddress
-subprocess.call(['pip', 'install', 'user-agents'])
 import subprocess
-
+subprocess.call(['pip', 'install', 'user-agents'])
 from user_agents import parse
 
 BaseDir="/opt/airflow/data"
